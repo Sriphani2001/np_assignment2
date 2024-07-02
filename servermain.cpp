@@ -61,6 +61,8 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    printf("Server starting...\n");
+
     char* destHost = strtok(argv[1], ":");
     char* destPort = strtok(NULL, ":");
 
@@ -123,17 +125,22 @@ int main(int argc, char *argv[]) {
         inet_ntop(their_addr.ss_family, getInAddr((struct sockaddr*)&their_addr), clientIP, sizeof(clientIP));
         int clientPort = ntohs(((struct sockaddr_in*)&their_addr)->sin_port);
 
+        printf("Received message from %s:%d\n", clientIP, clientPort);
+
         string operand = randomType();
 
         if (numbytes == sizeof(calcMessage)) {
             if (!isValidProtocol(buf)) {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
+                printf("Invalid protocol message from %s:%d\n", clientIP, clientPort);
                 continue;
             }
 
             clientStatus[clientID] = 0;
             clientAddresses[clientID] = clientIP;
             clientPorts[clientID] = clientPort;
+
+            printf("Client %d connected from %s:%d\n", clientID, clientIP, clientPort);
 
             if (operand[0] == 'f') {
                 proto.arith = htonl(getArithIndex(operand));
@@ -162,6 +169,7 @@ int main(int argc, char *argv[]) {
 
             if ((numbytes = sendto(sockfd, &proto, sizeof(proto), 0, (struct sockaddr*)&their_addr, addr_len)) == -1) {
                 perror("sendto");
+            } else {
                 printf("Sent calculation to client %d\n", ntohl(proto.id));
             }
         } else if (numbytes == sizeof(calcProtocol)) {
@@ -170,6 +178,7 @@ int main(int argc, char *argv[]) {
             int receivedID = ntohl(proto.id);
             if (clientStatus.find(receivedID) == clientStatus.end()) {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
+                printf("Unknown client ID %d\n", receivedID);
                 continue;
             }
 
@@ -179,6 +188,8 @@ int main(int argc, char *argv[]) {
             double fvalue1 = proto.flValue1;
             double fvalue2 = proto.flValue2;
             double fresult = proto.flResult;
+
+            printf("Received calculation result from client %d\n", receivedID);
 
             bool isEqual = false;
 
