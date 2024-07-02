@@ -131,8 +131,6 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            printf("Client %d connected from %s:%d\n", clientID, clientIP, clientPort);
-
             clientStatus[clientID] = 0;
             clientAddresses[clientID] = clientIP;
             clientPorts[clientID] = clientPort;
@@ -164,7 +162,6 @@ int main(int argc, char *argv[]) {
 
             if ((numbytes = sendto(sockfd, &proto, sizeof(proto), 0, (struct sockaddr*)&their_addr, addr_len)) == -1) {
                 perror("sendto");
-            } else {
                 printf("Sent calculation to client %d\n", ntohl(proto.id));
             }
         } else if (numbytes == sizeof(calcProtocol)) {
@@ -232,15 +229,13 @@ bool isValidProtocol(const char* msg) {
 
     info.type = ntohs(info.type);
     info.message = ntohl(info.message);
-    info.protocol = ntohl(info.protocol);
+    info.protocol = ntohs(info.protocol);
     info.major_version = ntohs(info.major_version);
     info.minor_version = ntohs(info.minor_version);
 
-    return (info.type == PROTOCOL.type &&
-            info.message == PROTOCOL.message &&
-            info.protocol == PROTOCOL.protocol &&
-            info.major_version == PROTOCOL.major_version &&
-            info.minor_version == PROTOCOL.minor_version);
+    return info.type == PROTOCOL_TYPE && info.message == PROTOCOL_MESSAGE &&
+           info.protocol == 17 && info.major_version == PROTOCOL_VERSION_MAJOR &&
+           info.minor_version == PROTOCOL_VERSION_MINOR;
 }
 
 void handleClientTimeout(int signum) {
