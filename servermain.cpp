@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
             if ((numbytes = sendto(sockfd, &proto, sizeof(proto), 0, (struct sockaddr*)&their_addr, addr_len)) == -1) {
                 perror("sendto");
             } else {
-                printf("Sent task to client %d\n", ntohl(proto.id));
+                printf("Sent calculation to client %d\n", ntohl(proto.id));
             }
         } else if (numbytes == sizeof(calcProtocol)) {
             memcpy(&proto, buf, sizeof(proto));
@@ -198,10 +198,10 @@ int main(int argc, char *argv[]) {
 
             if (isEqual) {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, OK_MSG);
-                printf("Client %d sent correct result\n", receivedID);
+                printf("Client %d calculation correct\n", receivedID);
             } else {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
-                printf("Client %d sent incorrect result\n", receivedID);
+                printf("Client %d calculation incorrect\n", receivedID);
             }
             clientStatus.erase(receivedID);
         }
