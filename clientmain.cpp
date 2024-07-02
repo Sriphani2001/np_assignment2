@@ -1,221 +1,252 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<sys/socket.h>
-#include<sys/types.h>
-#include<arpa/inet.h>
-#include<sys/time.h>
-#include<sys/select.h>
-#include<unistd.h>
-
-#include "calcLib.h"
-#include"protocol.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
 #include <string>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <iostream>
+#include <inttypes.h>
 
-#define START 0
-#define CLAC 1
-char* getArith(int opt){
-    if(opt == 1 || opt ==5) return (char*)"+";
-    else if(opt == 2 || opt == 6) return (char*)"-";
-    else if(opt == 3 || opt == 7)  return (char*)"*";
-    else return (char*)"/";
-}
+//#define DEBUG
+//#define SERVERPORT "5000"
+#include "protocol.h"
+using namespace std;
+
+//#define DEBUG
 
 int main(int argc, char *argv[])
 {
-    int count = 0;   
-    for (char *ptr = argv[1]; *ptr != '\0'; ++ptr) 
-    {       
-        if (*ptr == ':') 
-        {  
-        count++;       
-        }   
-    }
-    bool ipv6Flag = false;
-    if(count>1)
-    {
-        ipv6Flag = true;
-    }
+    // Server address input. Should be given in the order of ip:port....
+    sockaddr servadrs;
+    char delim[] = ":";
+    char *Desthost = strtok(argv[1], delim);
+    char *Destport = strtok(NULL, delim);
+    int port = atoi(Destport);
+    printf("Host %s, and port %d.\n", Desthost, port);
 
+    #ifdef DEBUG
+        //printf("Host %s, and port %d.\n",Desthost,port);
+    #endif
 
-    int retransmit = 0;
-    int state = 0;// 0 start; 1 return calc result
-
-    //socket
-    int clitfd;
-    union 
-    {
-        struct sockaddr_in ipv4;
-        struct sockaddr_in6 ipv6;
-    } servadd, clitadd;
-    memset(&servadd,0,sizeof(servadd));
-    
-
-
-    if(ipv6Flag)
-    {
-        clitfd = socket(AF_INET6, SOCK_DGRAM, 0);
-        char *serverAddPtr = "::1";
-        char *serverPortPtr = "5000";
-
-        servadd.ipv6.sin6_family = AF_INET6;
-        servadd.ipv6.sin6_port = htons(atoi(serverPortPtr));
-        inet_pton(AF_INET6, serverAddPtr, &servadd.ipv6.sin6_addr);
-
-        printf("IPv6\n");
-    }
-    else
-    {
-        clitfd = socket(AF_INET, SOCK_DGRAM, 0);
-
-        char delim[]=":";
-        char *serverAddPtr=strtok(argv[1],delim);
-        char *serverPortPtr=strtok(NULL,delim);
-
-        servadd.ipv4.sin_family = AF_INET;
-        servadd.ipv4.sin_port = htons(atoi(serverPortPtr));
-        servadd.ipv4.sin_addr.s_addr = inet_addr(serverAddPtr);
-
+    if (Desthost == NULL || Destport == NULL) {
+        cout << "Entered input is false\n";
+        exit(1);
     }
 
-    socklen_t address_length;
+    char buffer[1024];
 
-    struct calcMessage sendMessage,returnMessage;
-    struct calcProtocol respondeMessage;
-    char rvbuf[1024];
-    //first calcMessage
-    sendMessage.type = htons(22);
-    sendMessage.message = htonl(0);
-    sendMessage.protocol = htons(17);
-    sendMessage.major_version = htons(1);
-    sendMessage.minor_version = htons(0);
-    // prepare for select
-    int maxfdp;
-    fd_set fds;
-    struct timeval timeout = {2, 0};
-    //first send
-    
-    while(1)
-    {
-        if(state == START){
-            sendto(clitfd,&sendMessage,sizeof(sendMessage),0,(struct sockaddr*)&servadd, sizeof(servadd));
-            getsockname(clitfd,(struct sockaddr*)&clitadd,&address_length);
-            
-            // if(ipv6Flag)
-            // {
-            //     printf("First calcMessage has been sent to IP:%s PORT:%d\nFrom IP:%s PORT:%d\n  type: %hu\n", 
-            //         servadd.ipv6.sin6_addr, ntohs(servadd.ipv6.sin6_port),clitadd.ipv6.sin6_addr, ntohs(clitadd.ipv6.sin6_port),ntohs(sendMessage.type));
-            // }
-            // else
-            // {
-            //     printf("First calcMessage has been sent to IP:%s PORT:%d\nFrom IP:%s PORT:%d\n  type: %hu\n", 
-            //         inet_ntoa(servadd.ipv4.sin_addr), ntohs(servadd.ipv4.sin_port),inet_ntoa(clitadd.ipv4.sin_addr), ntohs(clitadd.ipv4.sin_port),ntohs(sendMessage.type));
-            // }
-        }
-        FD_ZERO(&fds);//clean up.
-        FD_SET(clitfd, &fds);
-        maxfdp = clitfd + 1;
-        int num = select(maxfdp, &fds, NULL, NULL, &timeout);
-        if(num == -1){
-            printf("Select Error\n");
+    // Structs of address information and address size (server data)
+    socklen_t addr_size;
+    addrinfo hints, *sinfo, *ptr;
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; // Support both IPv4 and IPv6
+    hints.ai_socktype = SOCK_DGRAM;
+
+    // Get address info
+    int variable;
+    if ((variable = getaddrinfo(Desthost, Destport, &hints, &sinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(variable));
+        return 1;
+    }
+
+    // Create socket
+    int soc = 0;
+    for (ptr = sinfo; ptr != NULL; ptr = ptr->ai_next) {
+        soc = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+        if (soc == -1) {
+            cout << "Error in creating socket\n";
+            continue;
+        } else {
+            #ifdef DEBUG
+                cout << "Socket created\n";
+            #endif
             break;
         }
-        else if(num == 0){
-            //upper bound of retransmitting
-            if(retransmit == 2){
-                printf("transmit times = 3, up to the bound.\n");
-                printf("Not OK\n");
-                break;
-            }
-            //reset the timeval
-            timeout.tv_sec = 2;
-            timeout.tv_usec = 0;
-            printf("Datagram hasn't been sent successfully.\nResend right now.\n\n");
-            if(state == CLAC){//state == 1
-            //resend the calcProtocol
-                sendto(clitfd, &respondeMessage, sizeof(respondeMessage), 0, (struct sockaddr*)&servadd, sizeof(servadd));
-            }
-            retransmit++;
-            continue;
-        }
-        else if(FD_ISSET(clitfd,&fds)){//get message from clitfd
-            retransmit = 0;
-            int ret = recvfrom(clitfd, rvbuf, sizeof(rvbuf), 0, NULL, NULL);
-            //something wrong in recvfrom
-            if(ret == -1)
-            {
-                printf("Receive an error.\n");
-                break;
-            }
-            //receive calcProtocol
-            else if(ret == 50)
-            {
-                // 回传
-                // sleep(11);
-                // sleep(5);
-
-                memcpy(&respondeMessage, rvbuf, ret);
-                char operS[10]; 
-                switch(ntohl(respondeMessage.arith)){
-                    case 1:
-                        respondeMessage.inResult = htonl(ntohl(respondeMessage.inValue1)+ntohl(respondeMessage.inValue2));
-                        strcpy(operS, "add");
-                        break;
-                    case 2:
-                        respondeMessage.inResult = htonl(ntohl(respondeMessage.inValue1)-ntohl(respondeMessage.inValue2));
-                        strcpy(operS, "sub");
-                        break;
-                    case 3:
-                        respondeMessage.inResult = htonl(ntohl(respondeMessage.inValue1)*ntohl(respondeMessage.inValue2));
-                        strcpy(operS, "mul");
-                        break;
-                    case 4:
-                        respondeMessage.inResult = htonl(ntohl(respondeMessage.inValue1)/ntohl(respondeMessage.inValue2));
-                        strcpy(operS, "div");
-                        break;
-                    case 5:
-                        respondeMessage.flResult = respondeMessage.flValue1+respondeMessage.flValue2;
-                        strcpy(operS, "fadd");
-                        break;
-                    case 6:
-                        respondeMessage.flResult = respondeMessage.flValue1-respondeMessage.flValue2;
-                        strcpy(operS, "fsub");
-                        break;
-                    case 7:
-                        respondeMessage.flResult = respondeMessage.flValue1*respondeMessage.flValue2;
-                        strcpy(operS, "fmul");
-                        break;
-                    case 8:
-                        respondeMessage.flResult = respondeMessage.flValue1/respondeMessage.flValue2;
-                        strcpy(operS, "fdiv");
-                        break;
-                }
-                printf("\nFrom Server:\ntype: %hu\nAssignment: %s\ninValue1: %u, inValue2: %u\nflValue1: %f, flValue2: %f\n", 
-                ntohs(respondeMessage.type),operS,ntohl(respondeMessage.inValue1),ntohl(respondeMessage.inValue2),respondeMessage.flValue1,respondeMessage.flValue2);
-
-                sendto(clitfd, &respondeMessage, sizeof(respondeMessage), 0, (struct sockaddr*)&servadd, sizeof(servadd));
-                state = 1;
-                printf("New calcProtocol has been sent.\nintResult: %u\nfloatResult: %lf\n", ntohl(respondeMessage.inResult), respondeMessage.flResult);
-                continue;
-            }
-            //receive calcMessage for assuring the answer
-            else if(ret == 12)
-            {
-                memcpy(&returnMessage,rvbuf, ret);
-                if(state == 0){
-                    printf("CONNECTION REJECTED.\n");
-                    break;
-                }
-                else{
-                    printf("\n");
-                    if(ntohl(returnMessage.message)==1)printf("Server returns OK.\n");
-                    else if(ntohl(returnMessage.message)==2)printf("Server returns NOT OK.\n");
-                    else printf("Server returns N/A.\n");
-                    break;
-                }
-            } 
-        }        
     }
-    close(clitfd);
+
+    if (ptr == NULL) {
+        cout << "Failed to create socket\n";
+        return 1;
+    }
+
+    // Client first message server
+    calcMessage messg;
+    messg.type = htons(22); // Client-to-server, binary protocol
+    messg.message = htonl(0); // Not applicable/available (N/A or NA)
+    messg.protocol = htons(17); // UDP connection
+    messg.major_version = htons(1);
+    messg.minor_version = htons(0);
+
+    freeaddrinfo(sinfo);
+
+    // Connection timeout
+    timeval tout;
+    tout.tv_sec = 2;
+    tout.tv_usec = 0;
+
+    if (setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)) < 0) {
+        perror("setsockopt failed\n");
+    }
+
+    if (sendto(soc, &messg, sizeof(messg), 0, ptr->ai_addr, ptr->ai_addrlen) == -1) {
+        cout << "Unable to send message\n";
+        close(soc);
+        exit(1);
+    }
+
+    int nSent = 0;
+    int bReceived = 0;
+    calcProtocol msgRecv;
+
+    while (nSent < 3) {
+        memset(&msgRecv, 0, sizeof(msgRecv));
+        bReceived = recvfrom(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, &ptr->ai_addrlen);
+        if (bReceived < 0) {
+            cout << "Receive timeout, sending message again.\n";
+            nSent++;
+            int send = sendto(soc, &messg, sizeof(messg), 0, ptr->ai_addr, ptr->ai_addrlen);
+            if (send == -1) {
+                cout << "Message cannot be sent\n";
+                close(soc);
+                exit(1);
+            }
+            if (nSent < 3) continue;
+            else {
+                cout << "Message cannot be sent\n";
+                close(soc);
+                exit(1);
+            }
+        } else {
+            nSent = 0;
+            break;
+        }
+    }
+
+    if (bReceived < (int)sizeof(msgRecv)) {
+        calcMessage *clcMsg = (calcMessage *)&msgRecv;
+        int t = 0;
+        if (ntohs(clcMsg->type) == 2 && ntohs(clcMsg->message) == 2 && ntohs(clcMsg->major_version) == 1 && ntohs(clcMsg->minor_version) == 0) {
+            cout << "stop";
+            t = -1;
+        }
+        return t;
+
+        if (clcMsg) {
+            cout << "NOT OK message is given.\nClosing socket\n";
+            close(soc);
+            exit(1);
+        }
+    }
+
+    #ifdef DEBUG
+        cout << "Assignment received ";
+    #endif
+
+    int in1 = ntohl(msgRecv.inValue1), in2 = ntohl(msgRecv.inValue2);
+    int inRes = ntohl(msgRecv.inResult);
+    float f1 = msgRecv.flValue1, f2 = msgRecv.flValue2;
+    float fRes = msgRecv.flResult;
+    cout << "Assignment: ";
+    string output = "";
+
+    // Calculations of given assignment begin here....
+    if (ntohl(msgRecv.arith) == 1) { // integer add
+        cout << "Add " << in1 << " " << in2 << "\n";
+        inRes = in1 + in2;
+        msgRecv.inResult = htonl(inRes);
+        output = "i";
+    } else if (ntohl(msgRecv.arith) == 2) { // integer sub
+        cout << "Sub " << in1 << " " << in2 << "\n";
+        inRes = in1 - in2;
+        msgRecv.inResult = htonl(inRes);
+        output = "i";
+    } else if (ntohl(msgRecv.arith) == 3) { // integer mul
+        cout << "Mul " << in1 << " " << in2 << "\n";
+        inRes = in1 * in2;
+        msgRecv.inResult = htonl(inRes);
+        output = "i";
+    } else if (ntohl(msgRecv.arith) == 4) { // integer div
+        cout << "Div " << in1 << " " << in2 << "\n";
+        inRes = in1 / in2;
+        msgRecv.inResult = htonl(inRes);
+        output = "i";
+    } else if (ntohl(msgRecv.arith) == 5) { // float add
+        cout << "Fadd " << f1 << " " << f2 << "\n";
+        fRes = f1 + f2;
+        msgRecv.flResult = fRes;
+        output = "f";
+    } else if (ntohl(msgRecv.arith) == 6) { // float sub
+        cout << "Fsub " << f1 << " " << f2 << "\n";
+        fRes = f1 - f2;
+        msgRecv.flResult = fRes;
+        output = "f";
+    } else if (ntohl(msgRecv.arith) == 7) { // float mul
+        cout << "Fmul " << f1 << " " << f2 << "\n";
+        fRes = f1 * f2;
+        msgRecv.flResult = fRes;
+        output = "f";
+    } else if (ntohl(msgRecv.arith) == 8) { // float div
+        cout << "Fdiv " << f1 << " " << f2 << "\n";
+        fRes = f1 / f2;
+        msgRecv.flResult = fRes;
+        output = "f";
+    } else {
+        cout << "Can't do that operation.\n";
+    }
+
+    // Sending answer to server
+    int send = sendto(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, ptr->ai_addrlen);
+    if (send == -1) {
+        cout << "Message cannot be sent\n";
+        close(soc);
+        exit(1);
+    }
+
+    if (output == "i") {
+        cout << "My result: " << ntohl(msgRecv.inResult) << "\n";
+    } else {
+        cout << "My result: " << msgRecv.flResult << "\n";
+    }
+
+    #ifdef DEBUG
+        cout << "Message sent successfully\n";
+    #endif
+
+    calcMessage resp;
+    while (nSent < 3) {
+        memset(&resp, 0, sizeof(resp));
+        bReceived = recvfrom(soc, &resp, sizeof(resp), 0, ptr->ai_addr, &ptr->ai_addrlen);
+        if (bReceived < 0) {
+            cout << "Receive timeout, sending again.\n";
+            nSent++;
+            int send = sendto(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, ptr->ai_addrlen);
+            if (send == -1) {
+                cout << "Message cannot be sent\n";
+                close(soc);
+                exit(1);
+            }
+            if (nSent < 3) continue;
+            else {
+                cout << "Could not send message\n";
+                close(soc);
+                exit(1);
+            }
+        } else {
+            nSent = 0;
+            break;
+        }
+    }
+
+    // Verification from server whether our problem is correct or not
+    ntohl(resp.message) == 1 ? cout << "Server: OK!\n" : cerr << "Server: NOT OK!\n";
+
+    // Close the socket
+    close(soc);
     return 0;
 }
