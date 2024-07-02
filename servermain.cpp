@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
         inet_ntop(their_addr.ss_family, getInAddr((struct sockaddr*)&their_addr), clientIP, sizeof(clientIP));
         int clientPort = ntohs(((struct sockaddr_in*)&their_addr)->sin_port);
 
-        printf("Received message from %s:%d\n", clientIP, clientPort);
+      //  printf("Received message from %s:%d\n", clientIP, clientPort);
 
         string operand = randomType();
 
@@ -211,7 +211,7 @@ if (numbytes == sizeof(calcMessage)) {
 
             if (isEqual) {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, OK_MSG);
-                printf("Client %d calculation correct\n", receivedID);
+                printf("Client %d calculation correct \n\n", receivedID);
             } else {
                 sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
                 printf("Client %d calculation incorrect\n", receivedID);
