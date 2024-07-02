@@ -129,49 +129,54 @@ int main(int argc, char *argv[]) {
 
         string operand = randomType();
 
-        if (numbytes == sizeof(calcMessage)) {
-            if (!isValidProtocol(buf)) {
-                sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
-                printf("Invalid protocol message from %s:%d\n", clientIP, clientPort);
-                continue;
-            }
+// Inside the if (numbytes == sizeof(calcMessage)) block
+if (numbytes == sizeof(calcMessage)) {
+    if (!isValidProtocol(buf)) {
+        sendCalcMessage(sockfd, (struct sockaddr*)&their_addr, addr_len, NOTOK_MSG);
+        printf("Invalid protocol message from %s:%d\n", clientIP, clientPort);
+        continue;
+    }
 
-            clientStatus[clientID] = 0;
-            clientAddresses[clientID] = clientIP;
-            clientPorts[clientID] = clientPort;
+    clientStatus[clientID] = 0;
+    clientAddresses[clientID] = clientIP;
+    clientPorts[clientID] = clientPort;
 
-            printf("Client %d connected from %s:%d\n", clientID, clientIP, clientPort);
+    printf("Client %d connected from %s:%d\n", clientID, clientIP, clientPort);
 
-            if (operand[0] == 'f') {
-                proto.arith = htonl(getArithIndex(operand));
-                proto.flValue1 = randomFloat();
-                proto.flValue2 = randomFloat();
-                proto.inValue1 = htonl(0);
-                proto.inValue2 = htonl(0);
-                proto.inResult = htonl(0);
-                proto.flResult = 0.0f;
-            } else {
-                proto.arith = htonl(getArithIndex(operand));
-                proto.inValue1 = htonl(randomInt());
-                proto.inValue2 = htonl(randomInt());
-                proto.inResult = htonl(0);
-                proto.flValue1 = 0.0f;
-                proto.flValue2 = 0.0f;
-                proto.flResult = 0.0f;
-            }
+    if (operand[0] == 'f') {
+        proto.arith = htonl(getArithIndex(operand));
+        proto.flValue1 = randomFloat();
+        proto.flValue2 = randomFloat();
+        proto.inValue1 = htonl(0);
+        proto.inValue2 = htonl(0);
+        proto.inResult = htonl(0);
+        proto.flResult = 0.0f;
+        printf("Sent calculation problem to client %d: %.2f %s %.2f\n", clientID, proto.flValue1, operand.c_str(), proto.flValue2);
+    } else {
+        proto.arith = htonl(getArithIndex(operand));
+        proto.inValue1 = htonl(randomInt());
+        proto.inValue2 = htonl(randomInt());
+        proto.inResult = htonl(0);
+        proto.flValue1 = 0.0f;
+        proto.flValue2 = 0.0f;
+        proto.flResult = 0.0f;
+        printf("Sent calculation problem to client %d: %d %s %d\n", clientID, ntohl(proto.inValue1), operand.c_str(), ntohl(proto.inValue2));
+    }
 
-            proto.type = htonl(1);
-            proto.major_version = htonl(1);
-            proto.minor_version = htonl(0);
-            proto.id = htonl(clientID);
+    proto.type = htonl(1);
+    proto.major_version = htonl(1);
+    proto.minor_version = htonl(0);
+    proto.id = htonl(clientID);
 
-            clientID++;
+    clientID++;
 
-            if ((numbytes = sendto(sockfd, &proto, sizeof(proto), 0, (struct sockaddr*)&their_addr, addr_len)) == -1) {
-                perror("sendto");
-            } else {
-                printf("Sent calculation to client %d\n", ntohl(proto.id));
-            }
+    if ((numbytes = sendto(sockfd, &proto, sizeof(proto), 0, (struct sockaddr*)&their_addr, addr_len)) == -1) {
+        perror("sendto");
+    } else {
+        printf("Sent calculation to client %d\n", ntohl(proto.id));
+    }
+}
+
         } else if (numbytes == sizeof(calcProtocol)) {
             memcpy(&proto, buf, sizeof(proto));
 
