@@ -15,7 +15,7 @@
 
 using namespace std;
 
-//#define DEBUG
+#define DEBUG
 
 void printServerMetadata(addrinfo *sinfo) {
     char ipstr[INET6_ADDRSTRLEN];
