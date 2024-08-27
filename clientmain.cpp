@@ -15,7 +15,7 @@
 
 using namespace std;
 
-#define DEBUG
+//#define DEBUG
 
 void printServerMetadata(addrinfo *sinfo) {
     char ipstr[INET6_ADDRSTRLEN];
@@ -62,9 +62,9 @@ int main(int argc, char *argv[])
     hints.ai_family = AF_UNSPEC; // Support both IPv4 and IPv6
     hints.ai_socktype = SOCK_DGRAM;
 
-    int variable = getaddrinfo(Desthost, Destport, &hints, &sinfo);
-    if (variable != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(variable));
+    int result = getaddrinfo(Desthost, Destport, &hints, &sinfo);
+    if (result != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(result));
         return 1;
     }
 
@@ -73,14 +73,22 @@ int main(int argc, char *argv[])
     printServerMetadata(sinfo);
     #endif
 
-    int soc;
+    int soc = -1;
     for (ptr = sinfo; ptr != NULL; ptr = ptr->ai_next) {
         soc = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
         if (soc != -1) break;
     }
 
-    if (ptr == NULL) {
+    if (soc == -1) {
         cerr << "Failed to create socket\n";
+        freeaddrinfo(sinfo);
+        return 1;
+    }
+
+    timeval tout = {2, 0};
+    if (setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout)) == -1) {
+        perror("setsockopt");
+        close(soc);
         freeaddrinfo(sinfo);
         return 1;
     }
@@ -94,14 +102,10 @@ int main(int argc, char *argv[])
         .minor_version = htons(0)
     };
 
-    freeaddrinfo(sinfo);
-
-    timeval tout = {2, 0};
-    setsockopt(soc, SOL_SOCKET, SO_RCVTIMEO, &tout, sizeof(tout));
-
     if (sendto(soc, &messg, sizeof(messg), 0, ptr->ai_addr, ptr->ai_addrlen) == -1) {
         perror("sendto");
         close(soc);
+        freeaddrinfo(sinfo);
         return 1;
     }
 
@@ -115,23 +119,30 @@ int main(int argc, char *argv[])
 
     while (attempts < 3 && !received) {
         memset(&msgRecv, 0, sizeof(msgRecv));
-        int bReceived = recvfrom(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, &ptr->ai_addrlen);
+        socklen_t addr_len = ptr->ai_addrlen;
+        int bReceived = recvfrom(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, &addr_len);
         if (bReceived >= 0) {
             received = true;
+        } else if (bReceived == 0) {
+            cerr << "Connection closed by server\n";
+            break;
         } else {
-            cout << "Receive timeout, sending message again.\n";
+            perror("recvfrom");
             if (sendto(soc, &messg, sizeof(messg), 0, ptr->ai_addr, ptr->ai_addrlen) == -1) {
                 perror("sendto");
                 close(soc);
+                freeaddrinfo(sinfo);
                 return 1;
             }
             attempts++;
+            cout << "Receive timeout, sending message again.\n";
         }
     }
 
     if (!received) {
         cerr << "Failed to receive response from server\n";
         close(soc);
+        freeaddrinfo(sinfo);
         return 1;
     }
 
@@ -151,13 +162,14 @@ int main(int argc, char *argv[])
         case 6: msgRecv.flResult = f1 - f2; cout << "Fsub " << f1 << " " << f2 << "\n"; resultOutput = to_string(f1 - f2); break;
         case 7: msgRecv.flResult = f1 * f2; cout << "Fmul " << f1 << " " << f2 << "\n"; resultOutput = to_string(f1 * f2); break;
         case 8: msgRecv.flResult = f1 / f2; cout << "Fdiv " << f1 << " " << f2 << "\n"; resultOutput = to_string(f1 / f2); break;
-        default: cerr << "Unknown operation\n"; close(soc); return 1;
+        default: cerr << "Unknown operation\n"; close(soc); freeaddrinfo(sinfo); return 1;
     }
 
     // Sending result to server
     if (sendto(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, ptr->ai_addrlen) == -1) {
         perror("sendto");
         close(soc);
+        freeaddrinfo(sinfo);
         return 1;
     }
 
@@ -174,23 +186,30 @@ int main(int argc, char *argv[])
 
     while (attempts < 3 && !received) {
         memset(&resp, 0, sizeof(resp));
-        int bReceived = recvfrom(soc, &resp, sizeof(resp), 0, ptr->ai_addr, &ptr->ai_addrlen);
+        socklen_t addr_len = ptr->ai_addrlen;
+        int bReceived = recvfrom(soc, &resp, sizeof(resp), 0, ptr->ai_addr, &addr_len);
         if (bReceived >= 0) {
             received = true;
+        } else if (bReceived == 0) {
+            cerr << "Connection closed by server\n";
+            break;
         } else {
-            cout << "Receive timeout, sending again.\n";
+            perror("recvfrom");
             if (sendto(soc, &msgRecv, sizeof(msgRecv), 0, ptr->ai_addr, ptr->ai_addrlen) == -1) {
                 perror("sendto");
                 close(soc);
+                freeaddrinfo(sinfo);
                 return 1;
             }
             attempts++;
+            cout << "Receive timeout, sending again.\n";
         }
     }
 
     if (!received) {
         cerr << "Failed to receive final response from server\n";
         close(soc);
+        freeaddrinfo(sinfo);
         return 1;
     }
 
@@ -201,5 +220,6 @@ int main(int argc, char *argv[])
     #endif
 
     close(soc);
+    freeaddrinfo(sinfo); // Free address info only after all operations are complete
     return 0;
 }
