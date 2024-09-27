@@ -15,7 +15,7 @@
 
 using namespace std;
 
-//#define DEBUG // Uncomment for debugging
+#define DEBUG
 
 // Helper function to print server IP metadata
 void printServerMetadata(addrinfo *sinfo) {
